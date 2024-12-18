@@ -80,16 +80,16 @@ class ConfigNest:
         self.parse(self.view, self.nest_instance, self.nest_root)
     
     def format_string(self):
-        s = ""
         def _internal_format(ns: SimpleNamespace, prefix='\t'):
+            s = ""
             for attr, value in ns.__dict__.items():
                 if isinstance(value, SimpleNamespace):
-                    s += prefix +  '+ ' + attr
-                    _internal_format(value, prefix + '|   ')
+                    s += f"{prefix}+ {attr}\n"
+                    s += _internal_format(value, prefix + '|   ')
                 else:
-                    s += prefix + '- ' + str(attr) + ": "  +  str(value)
-        _internal_format(self.nest_instance)
-
+                    s += f"{prefix}- {attr}: {value}\n"
+            return s
+        return _internal_format(self.nest_instance)
     
     @staticmethod
     def get_field(current_namespace: SimpleNamespace, field: str):
@@ -127,6 +127,8 @@ class ConfigNest:
         current_manifest = cls.load_manifest_from_file(current_nest_path)
 
         select_field_value = cls.get_field(current_view, cls.select_field)
+        if select_field_value is not None:
+            current_manifest.selection_mode = "one"
         override_field_value = cls.get_field(current_view, cls.override_field)
 
         current_name_target_map = cls.build_name_target_map(current_nest_path)
@@ -164,8 +166,10 @@ class ConfigNest:
                 inline_override = cls.get_field(current_view, name)
                 if inline_override is not None:
                     Utils.override_namespace(ns, inline_override)
-                setattr(current_nest_instance, name, ns)
+                
+                if current_manifest.select_one():
+                    Utils.override_namespace(current_nest_instance, ns)
+                else:
+                    setattr(current_nest_instance, name, ns)
             else:
                 pass
-
-
