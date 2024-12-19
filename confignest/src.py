@@ -4,14 +4,15 @@ from types import SimpleNamespace
 from dataclasses import dataclass
 
 
-class Utils:
+
+class ConfigNestUtils:
         
     @staticmethod
     def dict_to_namespace(data: dict) -> SimpleNamespace:
-        ns = SimpleNamespace()
+        ns = ConfigNestNamespace()
         for key, value in data.items():
             if isinstance(value, dict):
-                setattr(ns, key, Utils.dict_to_namespace(value))
+                setattr(ns, key, ConfigNestUtils.dict_to_namespace(value))
             else:
                 setattr(ns, key, value)
         return ns
@@ -22,17 +23,48 @@ class Utils:
         assert os.path.isfile(file_path), f"Should specify a valid file, got {file_path}"
         with open(file_path, 'r') as file:
             data = yaml.safe_load(file)
-        return Utils.dict_to_namespace(data)
+        return ConfigNestUtils.dict_to_namespace(data)
         
 
     
     @classmethod
     def override_namespace(cls, ns_be_overriden: SimpleNamespace, ns_to_override: SimpleNamespace):
         for attr, value in ns_to_override.__dict__.items():
-            if isinstance(value, SimpleNamespace):
+            if isinstance(value, ConfigNestNamespace):
                 cls.override_namespace(getattr(ns_be_overriden, attr), value)
             else:
                 setattr(ns_be_overriden, attr, value)
+    
+    @classmethod
+    def format_namespace(cls, ns: SimpleNamespace, prefix='\t'):
+        s = ""
+        for attr, value in ns.__dict__.items():
+            if isinstance(value, ConfigNestNamespace):
+                s += f"{prefix}+ {attr}\n"
+                s += cls.format_namespace(value, prefix + '|   ')
+            else:
+                s += f"{prefix}- {attr}: {value}\n"
+        return s
+    
+    @classmethod
+    def flatten_namespace(cls, ns: SimpleNamespace, export_ns: SimpleNamespace = None):
+        if export_ns is None:
+            export_ns = ConfigNestNamespace()
+        for attr, value in ns.__dict__.items():
+            if isinstance(value, ConfigNestNamespace):
+                cls.flatten_namespace(value, export_ns)
+            else:
+                setattr(export_ns, attr, value)
+        return export_ns
+
+
+class ConfigNestNamespace(SimpleNamespace):
+    def format_string(self):
+        return ConfigNestUtils.format_namespace(self)
+    
+    def export_flatten(self):
+        return ConfigNestUtils.flatten_namespace(self)
+
 
 
 @dataclass
@@ -62,7 +94,7 @@ class ConfigNestManifest:
     @classmethod
     def load_manifest(cls, manifest_filepath: str):
         if os.path.exists(manifest_filepath):
-            return ConfigNestManifest(**Utils.yaml_to_namespace(manifest_filepath).__dict__)
+            return ConfigNestManifest(**ConfigNestUtils.yaml_to_namespace(manifest_filepath).__dict__)
         else:
             return ConfigNestManifest()
 
@@ -76,41 +108,19 @@ class ConfigNest:
 
     def __init__(self, nest_root: str, view_file_path: str):
         self.nest_root = nest_root
-        self.view = Utils.yaml_to_namespace(view_file_path)
-        self.nest_instance = SimpleNamespace()
+        self.view = ConfigNestUtils.yaml_to_namespace(view_file_path)
+        self.nest_instance = ConfigNestNamespace()
         self.parse(self.view, self.nest_instance, self.nest_root)
     
     def format_string(self):
-        def _internal_format(ns: SimpleNamespace, prefix='\t'):
-            s = ""
-            for attr, value in ns.__dict__.items():
-                if isinstance(value, SimpleNamespace):
-                    s += f"{prefix}+ {attr}\n"
-                    s += _internal_format(value, prefix + '|   ')
-                else:
-                    s += f"{prefix}- {attr}: {value}\n"
-            return s
-        return _internal_format(self.nest_instance)
+        return self.nest_instance.format_string()
     
-    @classmethod
-    def _internal_flatten(cls, ns: SimpleNamespace, export_ns: SimpleNamespace):
-        for attr, value in ns.__dict__.items():
-            if isinstance(value, SimpleNamespace):
-                cls._internal_flatten(value, export_ns)
-            else:
-                setattr(export_ns, attr, value)
-        return export_ns
-    
-    def export_flatten_namespace(self, at=None):
-        if at == None:
-            return self._internal_flatten(self.nest_instance, SimpleNamespace())
-        else:
-            assert isinstance(at, SimpleNamespace), "Must start from a namespace"
-            return self._internal_flatten(at, SimpleNamespace())
+    def export_flatten_namespace(self):
+        return self.nest_instance.export_flatten()
 
     
     @staticmethod
-    def get_field(current_namespace: SimpleNamespace, field: str):
+    def get_field(current_namespace: ConfigNestNamespace, field: str):
         if current_namespace is None:
             return None
         if hasattr(current_namespace, field):
@@ -141,7 +151,7 @@ class ConfigNest:
     @classmethod
     def handle_inherit(cls, current_nest_path, target):
         target_path = os.path.join(current_nest_path, target)
-        ns = Utils.yaml_to_namespace(target_path)
+        ns = ConfigNestUtils.yaml_to_namespace(target_path)
         if ns is None:
             raise ValueError(f"Inherit file {target} not found in {current_nest_path}")
         if not hasattr(ns, cls.inherit_field):
@@ -150,7 +160,7 @@ class ConfigNest:
             inherit_filename = getattr(ns, cls.inherit_field)
             delattr(ns, cls.inherit_field)
             inherit_ns = cls.handle_inherit(current_nest_path, inherit_filename)
-            Utils.override_namespace(inherit_ns, ns)
+            ConfigNestUtils.override_namespace(inherit_ns, ns)
             return inherit_ns
             
 
@@ -186,7 +196,7 @@ class ConfigNest:
         for name, target in current_name_target_map.items():
             target_path = os.path.join(current_nest_path, target)
             if os.path.isdir(target_path):
-                setattr(current_nest_instance, name, SimpleNamespace())
+                setattr(current_nest_instance, name, ConfigNestNamespace())
                 next_nest_instance = getattr(current_nest_instance, name)
                 cls.parse(
                     cls.get_field(current_view, name),
@@ -196,13 +206,13 @@ class ConfigNest:
             elif os.path.isfile(target_path):
                 ns = cls.handle_inherit(current_nest_path, target)
                 if override_field_value is not None:
-                    Utils.override_namespace(ns, override_field_value)
+                    ConfigNestUtils.override_namespace(ns, override_field_value)
                 inline_override = cls.get_field(current_view, name)
                 if inline_override is not None:
-                    Utils.override_namespace(ns, inline_override)
+                    ConfigNestUtils.override_namespace(ns, inline_override)
                 
                 if current_manifest.select_one():
-                    Utils.override_namespace(current_nest_instance, ns)
+                    ConfigNestUtils.override_namespace(current_nest_instance, ns)
                 else:
                     setattr(current_nest_instance, name, ns)
             else:

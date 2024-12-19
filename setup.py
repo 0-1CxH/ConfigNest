@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="confignest",
-    version="1.0.4",
+    version="1.0.5",
     keywords=("pip", "confignest"),
     author="github.com/0-1CxH",
     author_email="h0.1c@foxmail.com",
