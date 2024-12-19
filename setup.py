@@ -1,11 +1,12 @@
 import setuptools
 # python setup.py sdist bdist_wheel 
+# twine upload dist/*
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name="confignest",
-    version="1.0.0",
+    version="1.0.1",
     keywords=("pip", "confignest"),
     author="github.com/0-1CxH",
     author_email="h0.1c@foxmail.com",

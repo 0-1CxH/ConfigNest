@@ -68,7 +68,7 @@ class ConfigNestManifest:
 
 
 class ConfigNest:
-    manifest_filename = "CONFIGNEST_MANIFEST"
+    manifest_filename = "__confignest_manifest__"
     select_field = "__select__"
     override_field = "__override__"
     yaml_suffix = ".yaml"
@@ -90,6 +90,18 @@ class ConfigNest:
                     s += f"{prefix}- {attr}: {value}\n"
             return s
         return _internal_format(self.nest_instance)
+    
+    def export_flatten_namespace(self):
+        def _internal_flatten(ns: SimpleNamespace, export_ns: SimpleNamespace):
+            for attr, value in ns.__dict__.items():
+                if isinstance(value, SimpleNamespace):
+                    _internal_flatten(value, export_ns)
+                else:
+                    setattr(export_ns, attr, value)
+            return export_ns
+        
+        return _internal_flatten(self.nest_instance, SimpleNamespace())
+
     
     @staticmethod
     def get_field(current_namespace: SimpleNamespace, field: str):
