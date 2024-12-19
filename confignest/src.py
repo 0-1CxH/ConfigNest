@@ -92,16 +92,21 @@ class ConfigNest:
             return s
         return _internal_format(self.nest_instance)
     
-    def export_flatten_namespace(self):
-        def _internal_flatten(ns: SimpleNamespace, export_ns: SimpleNamespace):
-            for attr, value in ns.__dict__.items():
-                if isinstance(value, SimpleNamespace):
-                    _internal_flatten(value, export_ns)
-                else:
-                    setattr(export_ns, attr, value)
-            return export_ns
-        
-        return _internal_flatten(self.nest_instance, SimpleNamespace())
+    @classmethod
+    def _internal_flatten(cls, ns: SimpleNamespace, export_ns: SimpleNamespace):
+        for attr, value in ns.__dict__.items():
+            if isinstance(value, SimpleNamespace):
+                cls._internal_flatten(value, export_ns)
+            else:
+                setattr(export_ns, attr, value)
+        return export_ns
+    
+    def export_flatten_namespace(self, at=None):
+        if at == None:
+            return self._internal_flatten(self.nest_instance, SimpleNamespace())
+        else:
+            assert isinstance(at, SimpleNamespace), "Must start from a namespace"
+            return self._internal_flatten(at, SimpleNamespace())
 
     
     @staticmethod
@@ -132,6 +137,22 @@ class ConfigNest:
     def load_manifest_from_file(cls, current_nest_path):
         manifest_filepath = os.path.join(current_nest_path, cls.manifest_filename)
         return ConfigNestManifest.load_manifest(manifest_filepath)
+    
+    @classmethod
+    def handle_inherit(cls, current_nest_path, target):
+        target_path = os.path.join(current_nest_path, target)
+        ns = Utils.yaml_to_namespace(target_path)
+        if ns is None:
+            raise ValueError(f"Inherit file {target} not found in {current_nest_path}")
+        if not hasattr(ns, cls.inherit_field):
+            return ns
+        else:
+            inherit_filename = getattr(ns, cls.inherit_field)
+            delattr(ns, cls.inherit_field)
+            inherit_ns = cls.handle_inherit(current_nest_path, inherit_filename)
+            Utils.override_namespace(inherit_ns, ns)
+            return inherit_ns
+            
 
     
     @classmethod
@@ -173,17 +194,7 @@ class ConfigNest:
                     target_path
                 )
             elif os.path.isfile(target_path):
-                ns = Utils.yaml_to_namespace(target_path)
-                # handle inherit
-                if hasattr(ns, cls.inherit_field):
-                    inherit_filename = getattr(ns, cls.inherit_field)
-                    delattr(ns, cls.inherit_field)
-                    inherit_ns = Utils.yaml_to_namespace(os.path.join(current_nest_path, inherit_filename))
-                    if inherit_ns is not None:
-                        Utils.override_namespace(inherit_ns, ns)
-                        ns = inherit_ns
-                    else:
-                        raise ValueError(f"Inherit file {inherit_filename} not found in {current_nest_path}")
+                ns = cls.handle_inherit(current_nest_path, target)
                 if override_field_value is not None:
                     Utils.override_namespace(ns, override_field_value)
                 inline_override = cls.get_field(current_view, name)
