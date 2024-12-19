@@ -72,6 +72,7 @@ class ConfigNest:
     select_field = "__select__"
     override_field = "__override__"
     yaml_suffix = ".yaml"
+    inherit_field = "__inherit__"
 
     def __init__(self, nest_root: str, view_file_path: str):
         self.nest_root = nest_root
@@ -173,6 +174,16 @@ class ConfigNest:
                 )
             elif os.path.isfile(target_path):
                 ns = Utils.yaml_to_namespace(target_path)
+                # handle inherit
+                if hasattr(ns, cls.inherit_field):
+                    inherit_filename = getattr(ns, cls.inherit_field)
+                    delattr(ns, cls.inherit_field)
+                    inherit_ns = Utils.yaml_to_namespace(os.path.join(current_nest_path, inherit_filename))
+                    if inherit_ns is not None:
+                        Utils.override_namespace(inherit_ns, ns)
+                        ns = inherit_ns
+                    else:
+                        raise ValueError(f"Inherit file {inherit_filename} not found in {current_nest_path}")
                 if override_field_value is not None:
                     Utils.override_namespace(ns, override_field_value)
                 inline_override = cls.get_field(current_view, name)
